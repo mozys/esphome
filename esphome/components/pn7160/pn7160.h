@@ -14,9 +14,15 @@
 namespace esphome {
 namespace pn7160 {
 
-static constexpr uint16_t NFCC_DEFAULT_TIMEOUT = 10;
-static constexpr uint16_t NFCC_INIT_TIMEOUT = 50;
-static constexpr uint16_t NFCC_TAG_WRITE_TIMEOUT = 15;
+static const uint8_t ST25DV_CMD_READ_MULTIPLE_BLOCKS = 0x23;
+static const uint8_t ST25DV_PAGE_SIZE = 4;
+static const uint8_t ST25DV_READ_SIZE = 1;
+static const uint8_t ST25DV_DATA_START_PAGE = 0;
+static const uint8_t ST25DV_MAX_PAGE = 63;
+
+static const uint16_t NFCC_DEFAULT_TIMEOUT = 10;
+static const uint16_t NFCC_INIT_TIMEOUT = 50;
+static const uint16_t NFCC_TAG_WRITE_TIMEOUT = 15;
 
 static constexpr uint8_t NFCC_MAX_COMM_FAILS = 3;
 static constexpr uint8_t NFCC_MAX_ERROR_COUNT = 10;
@@ -84,23 +90,23 @@ static constexpr uint8_t RF_DISCOVER_MAP_CONFIG[] = {  // poll modes
     nfc::PROT_ISODEP, nfc::RF_DISCOVER_MAP_MODE_POLL | nfc::RF_DISCOVER_MAP_MODE_LISTEN,
     nfc::INTF_ISODEP,  // poll & listen mode
     nfc::PROT_MIFARE, nfc::RF_DISCOVER_MAP_MODE_POLL,
-    nfc::INTF_TAGCMD};  // poll mode
+    nfc::INTF_TAGCMD,  // poll mode
+    nfc::PROT_NFCDEP,    nfc::RF_DISCOVER_MAP_MODE_POLL,
+    nfc::INTF_FRAME,  // poll mode
+    nfc::PROT_T5T,    nfc::RF_DISCOVER_MAP_MODE_POLL,
+    nfc::INTF_FRAME};  // poll mode
 
 static constexpr uint8_t RF_DISCOVERY_LISTEN_CONFIG[] = {
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
 
-static constexpr uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCA,   // poll mode
-                                                       nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCB,   // poll mode
-                                                       nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCF};  // poll mode
+static const uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693};  // poll mode
 
-static constexpr uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCA,          // poll mode
-                                                  nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCB,          // poll mode
-                                                  nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCF,          // poll mode
-                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
-                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
-                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
+static const uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693,          // poll mode
+                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
+                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
+                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
 
 static constexpr uint8_t RF_LISTEN_MODE_ROUTING_CONFIG[] = {0x00,  // "more" (another message is coming)
                                                             2,     // number of table entries
@@ -271,6 +277,16 @@ class PN7160 : public nfc::Nfcc, public Component {
   uint8_t write_mifare_ultralight_page_(uint8_t page_num, const uint8_t *write_data, size_t len);
   uint8_t write_mifare_ultralight_tag_(nfc::NfcTagUid &uid, const std::shared_ptr<nfc::NdefMessage> &message);
   uint8_t clean_mifare_ultralight_();
+
+  uint8_t read_st25dv_tag_(nfc::NfcTag &tag);
+  uint8_t read_st25dv_bytes_(uint8_t start_page, uint16_t num_bytes, std::vector<uint8_t> &data);
+  bool is_st25dv_formatted_(const std::vector<uint8_t> &page_3_to_6);
+  uint16_t read_st25dv_capacity_();
+  uint8_t find_st25dv_ndef_(const std::vector<uint8_t> &page_0_to_1, uint16_t &message_length,
+                                       uint8_t &message_start_index);
+  uint8_t write_st25dv_page_(uint8_t page_num, std::vector<uint8_t> &write_data);
+  uint8_t write_st25dv_tag_(std::vector<uint8_t> &uid, const std::shared_ptr<nfc::NdefMessage> &message);
+  uint8_t clean_st25dv_();
 
   enum NfcTask : uint8_t {
     EP_READ = 0,

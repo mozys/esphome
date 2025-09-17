@@ -12,7 +12,7 @@
 namespace esphome {
 namespace nfc {
 
-static constexpr uint8_t MAX_NDEF_RECORDS = 4;
+static const uint8_t MAX_NDEF_RECORDS = 8;
 
 class NdefMessage {
  public:

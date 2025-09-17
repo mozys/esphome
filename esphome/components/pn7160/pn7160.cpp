@@ -26,7 +26,7 @@ void PN7160::setup() {
 }
 
 void PN7160::dump_config() {
-  ESP_LOGCONFIG(TAG, "PN7160:");
+  ESP_LOGCONFIG(TAG, "PN7160 ISO15693:");
   if (this->dwl_req_pin_ != nullptr) {
     LOG_PIN("  DWL_REQ pin: ", this->dwl_req_pin_);
   }
@@ -486,6 +486,9 @@ void PN7160::select_endpoint_() {
 
 uint8_t PN7160::read_endpoint_data_(nfc::NfcTag &tag) {
   uint8_t type = nfc::guess_tag_type(tag.get_uid().size());
+  if(tag.get_uid().size() == 8) {
+    type = nfc::TAG_TYPE_5;
+  }
 
   switch (type) {
     case nfc::TAG_TYPE_MIFARE_CLASSIC:
@@ -495,6 +498,10 @@ uint8_t PN7160::read_endpoint_data_(nfc::NfcTag &tag) {
     case nfc::TAG_TYPE_2:
       ESP_LOGV(TAG, "Reading Mifare ultralight");
       return this->read_mifare_ultralight_tag_(tag);
+
+    case nfc::TAG_TYPE_5:
+      ESP_LOGV(TAG, "Reading ST25DV");
+      return this->read_st25dv_tag_(tag);
 
     case nfc::TAG_TYPE_UNKNOWN:
     default:
@@ -563,6 +570,23 @@ std::unique_ptr<nfc::NfcTag> PN7160::build_tag_(const uint8_t mode_tech, const s
       nfc::NfcTagUid uid(data.begin() + 3, data.begin() + 3 + uid_length);
       const auto *tag_type_str =
           nfc::guess_tag_type(uid_length) == nfc::TAG_TYPE_MIFARE_CLASSIC ? nfc::MIFARE_CLASSIC : nfc::NFC_FORUM_TYPE_2;
+      return make_unique<nfc::NfcTag>(uid, tag_type_str);
+    }
+    case (nfc::MODE_POLL | nfc::TECH_PASSIVE_15693): {
+      // Debug output data
+      std::string hex_str;
+      hex_str.reserve(data.size() * 3); // Pre-allocate space
+      for (size_t i = 0; i < data.size(); ++i) {
+          if (i > 0) hex_str += " ";
+          char temp[3];
+          sprintf(temp, "%02X", data[i]);
+          hex_str += temp;
+      }
+      ESP_LOGVV(TAG, "data (len %d): %s", data.size(), hex_str.c_str());
+
+      uint8_t uid_length = 8;
+      std::vector<uint8_t> uid(data.begin() + 2, data.begin() + 2 + uid_length);
+      const auto *tag_type_str = "NFC Forum Type 5";
       return make_unique<nfc::NfcTag>(uid, tag_type_str);
     }
   }
