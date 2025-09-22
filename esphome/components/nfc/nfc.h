@@ -59,6 +59,7 @@ static const uint8_t ISO15693_REQ_FLAG_DR_HIGH = 0x02;
 
 static const char *const MIFARE_CLASSIC = "Mifare Classic";
 static const char *const NFC_FORUM_TYPE_2 = "NFC Forum Type 2";
+static const char *const NFC_FORUM_TYPE_5 = "NFC Forum Type 5";
 static const char *const ERROR = "Error";
 
 static constexpr uint8_t DEFAULT_KEY[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
