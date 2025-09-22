@@ -13,6 +13,9 @@ uint8_t PN7160I2C::read_nfcc(nfc::NciMessage &rx, const uint16_t timeout) {
     return nfc::STATUS_FAILED;
   }
 
+  // irq pin turns low after i2c read message, but we can miss it as low time can be only 167us in some case
+  this->store_.clear_changed();
+
   rx.get_message().resize(nfc::NCI_PKT_HEADER_SIZE);
   if (!this->read_bytes_raw(rx.get_message().data(), nfc::NCI_PKT_HEADER_SIZE)) {
     return nfc::STATUS_FAILED;
@@ -26,7 +29,7 @@ uint8_t PN7160I2C::read_nfcc(nfc::NciMessage &rx, const uint16_t timeout) {
     }
   }
   // semaphore to ensure transaction is complete before returning
-  if (this->wait_for_irq_(pn7160::NFCC_DEFAULT_TIMEOUT, false) != nfc::STATUS_OK) {
+  if (this->wait_for_irq_(pn7160::NFCC_DEFAULT_TIMEOUT, false, true) != nfc::STATUS_OK) {
     ESP_LOGW(TAG, "read_nfcc_() post-read timeout waiting for IRQ line to clear");
     return nfc::STATUS_FAILED;
   }

@@ -164,6 +164,32 @@ struct DiscoveredEndpoint {
   bool trig_called;
 };
 
+// Store class for ISR data (no vtables, ISR-safe)
+class PN7160Store {
+ public:
+  void setup(InternalGPIOPin *pin, Component *component);
+
+  static void gpio_intr(PN7160Store *arg);
+
+  bool get_state() const {
+    return this->state_;
+  }
+
+  bool is_changed() const {
+    return this->changed_;
+  }
+
+  void clear_changed() {
+    this->changed_ = false;
+  }
+
+ protected:
+  ISRInternalGPIOPin isr_pin_;
+  volatile bool state_{false};
+  volatile bool changed_{false};
+  Component *component_{nullptr};  // Pointer to the component for enable_loop_soon_any_context()
+};
+
 class PN7160 : public nfc::Nfcc, public Component {
  public:
   void setup() override;
@@ -256,7 +282,7 @@ class PN7160 : public nfc::Nfcc, public Component {
   virtual uint8_t read_nfcc(nfc::NciMessage &rx, uint16_t timeout) = 0;
   virtual uint8_t write_nfcc(nfc::NciMessage &tx) = 0;
 
-  uint8_t wait_for_irq_(uint16_t timeout = NFCC_DEFAULT_TIMEOUT, bool pin_state = true);
+  uint8_t wait_for_irq_(uint16_t timeout = NFCC_DEFAULT_TIMEOUT, bool pin_state = true, bool return_on_changed = false);
 
   uint8_t read_mifare_classic_tag_(nfc::NfcTag &tag);
   uint8_t read_mifare_classic_block_(uint8_t block_num, std::vector<uint8_t> &data);
@@ -310,6 +336,8 @@ class PN7160 : public nfc::Nfcc, public Component {
   GPIOPin *irq_pin_{nullptr};
   GPIOPin *ven_pin_{nullptr};
   GPIOPin *wkup_req_pin_{nullptr};
+
+  PN7160Store store_;
 
   CallbackManager<void()> on_emulated_tag_scan_callback_;
   CallbackManager<void()> on_finished_write_callback_;

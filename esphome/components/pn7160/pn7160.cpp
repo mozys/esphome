@@ -12,8 +12,30 @@ namespace pn7160 {
 
 static const char *const TAG = "pn7160";
 
+void IRAM_ATTR PN7160Store::gpio_intr(PN7160Store *arg) {
+  bool new_state = arg->isr_pin_.digital_read();
+  if (new_state != arg->state_) {
+    arg->state_ = new_state;
+    arg->changed_ = true;
+  }
+}
+
+void PN7160Store::setup(InternalGPIOPin *pin, Component *component) {
+  this->isr_pin_ = pin->to_isr();
+  this->component_ = component;
+
+  // Read initial state
+  this->state_ = pin->digital_read();
+
+  // Attach interrupt - from this point on, any changes will be caught by the interrupt
+  pin->attach_interrupt(&PN7160Store::gpio_intr, this, gpio::INTERRUPT_ANY_EDGE);
+}
+
 void PN7160::setup() {
   this->irq_pin_->setup();
+  auto *internal_pin = static_cast<InternalGPIOPin *>(this->irq_pin_);
+  this->store_.setup(internal_pin, this);
+
   this->ven_pin_->setup();
   if (this->dwl_req_pin_ != nullptr) {
     this->dwl_req_pin_->setup();
@@ -724,7 +746,7 @@ void PN7160::nci_fsm_transition_() {
     case NCIState::RFST_POLL_ACTIVE:
     case NCIState::EP_SELECTING:
     case NCIState::EP_DEACTIVATING:
-      if (this->irq_pin_->digital_read()) {
+      if (this->store_.get_state()) {
         this->process_message_();
       }
       break;
@@ -1198,11 +1220,15 @@ uint8_t PN7160::transceive_(nfc::NciMessage &tx, nfc::NciMessage &rx, const uint
   }
 }
 
-uint8_t PN7160::wait_for_irq_(uint16_t timeout, bool pin_state) {
+uint8_t PN7160::wait_for_irq_(uint16_t timeout, bool pin_state, bool return_on_changed) {
   auto start_time = millis();
 
   while (millis() - start_time < timeout) {
-    if (this->irq_pin_->digital_read() == pin_state) {
+    if (this->store_.get_state() == pin_state) {
+      return nfc::STATUS_OK;
+    }
+    if(return_on_changed && this->store_.is_changed()) {
+      // irq state was already pin_state but we missed it
       return nfc::STATUS_OK;
     }
   }
