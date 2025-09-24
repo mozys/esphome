@@ -76,7 +76,7 @@ static constexpr uint8_t PMU_CFG[] = {
     // 0xBB,        // TXLDO (4.7V / 4.7V)
     0xFF,  // TXLDO (5.0V / 5.0V)
     0x00,  // RFU
-    0xD0,  // TXLDO check
+    0x10,  // TXLDO check
     0x0C,  // RFU
 };
 
