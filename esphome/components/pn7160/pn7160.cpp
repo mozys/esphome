@@ -607,7 +607,7 @@ std::unique_ptr<nfc::NfcTag> PN7160::build_tag_(const uint8_t mode_tech, const s
       ESP_LOGVV(TAG, "data (len %d): %s", data.size(), hex_str.c_str());
 
       uint8_t uid_length = 8;
-      std::vector<uint8_t> uid(data.begin() + 2, data.begin() + 2 + uid_length);
+      nfc::NfcTagUid uid(data.begin() + 2, data.begin() + 2 + uid_length);
       const auto *tag_type_str = nfc::NFC_FORUM_TYPE_5;
       return make_unique<nfc::NfcTag>(uid, tag_type_str);
     }
