@@ -14,15 +14,15 @@
 namespace esphome {
 namespace pn7160 {
 
-static const uint8_t ST25DV_CMD_READ_MULTIPLE_BLOCKS = 0x23;
-static const uint8_t ST25DV_PAGE_SIZE = 4;
-static const uint8_t ST25DV_READ_SIZE = 1;
-static const uint8_t ST25DV_DATA_START_PAGE = 0;
-static const uint8_t ST25DV_MAX_PAGE = 63;
+static constexpr uint8_t ST25DV_CMD_READ_MULTIPLE_BLOCKS = 0x23;
+static constexpr uint8_t ST25DV_PAGE_SIZE = 4;
+static constexpr uint8_t ST25DV_READ_SIZE = 1;
+static constexpr uint8_t ST25DV_DATA_START_PAGE = 0;
+static constexpr uint8_t ST25DV_MAX_PAGE = 63;
 
-static const uint16_t NFCC_DEFAULT_TIMEOUT = 10;
-static const uint16_t NFCC_INIT_TIMEOUT = 50;
-static const uint16_t NFCC_TAG_WRITE_TIMEOUT = 15;
+static constexpr uint16_t NFCC_DEFAULT_TIMEOUT = 10;
+static constexpr uint16_t NFCC_INIT_TIMEOUT = 50;
+static constexpr uint16_t NFCC_TAG_WRITE_TIMEOUT = 15;
 
 static constexpr uint8_t NFCC_MAX_COMM_FAILS = 3;
 static constexpr uint8_t NFCC_MAX_ERROR_COUNT = 10;
@@ -101,12 +101,12 @@ static constexpr uint8_t RF_DISCOVERY_LISTEN_CONFIG[] = {
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
 
-static const uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693};  // poll mode
+static constexpr uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693};  // poll mode
 
-static const uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693,          // poll mode
-                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
-                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
-                                              nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
+static constexpr uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693,          // poll mode
+                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
+                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
+                                                  nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
 
 static constexpr uint8_t RF_LISTEN_MODE_ROUTING_CONFIG[] = {0x00,  // "more" (another message is coming)
                                                             2,     // number of table entries

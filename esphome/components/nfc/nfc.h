@@ -24,17 +24,17 @@ static constexpr uint8_t MIFARE_ULTRALIGHT_READ_SIZE = 4;
 static constexpr uint8_t MIFARE_ULTRALIGHT_DATA_START_PAGE = 4;
 static constexpr uint8_t MIFARE_ULTRALIGHT_MAX_PAGE = 63;
 
-static const uint8_t ISO15693_PAGE_SIZE = 4;
-static const uint8_t ISO15693_DATA_START_PAGE = 0;
-static const uint8_t ISO15693_MAX_PAGE = 255;
+static constexpr uint8_t ISO15693_PAGE_SIZE = 4;
+static constexpr uint8_t ISO15693_DATA_START_PAGE = 0;
+static constexpr uint8_t ISO15693_MAX_PAGE = 255;
 
-static const uint8_t TAG_TYPE_MIFARE_CLASSIC = 0;
-static const uint8_t TAG_TYPE_1 = 1;
-static const uint8_t TAG_TYPE_2 = 2;
-static const uint8_t TAG_TYPE_3 = 3;
-static const uint8_t TAG_TYPE_4 = 4;
-static const uint8_t TAG_TYPE_5 = 5;
-static const uint8_t TAG_TYPE_UNKNOWN = 99;
+static constexpr uint8_t TAG_TYPE_MIFARE_CLASSIC = 0;
+static constexpr uint8_t TAG_TYPE_1 = 1;
+static constexpr uint8_t TAG_TYPE_2 = 2;
+static constexpr uint8_t TAG_TYPE_3 = 3;
+static constexpr uint8_t TAG_TYPE_4 = 4;
+static constexpr uint8_t TAG_TYPE_5 = 5;
+static constexpr uint8_t TAG_TYPE_UNKNOWN = 99;
 
 // Mifare Commands
 static constexpr uint8_t MIFARE_CMD_AUTH_A = 0x60;
@@ -52,10 +52,10 @@ static constexpr uint8_t MIFARE_CMD_NAK_INVALID_XFER_BUFF_INVALID = 0x04;
 static constexpr uint8_t MIFARE_CMD_NAK_CRC_ERROR_XFER_BUFF_INVALID = 0x05;
 
 // ISO15693 Commands
-static const uint8_t ISO15693_CMD_READ_MULTIPLE = 0x23;
+static constexpr uint8_t ISO15693_CMD_READ_MULTIPLE = 0x23;
 
 // ISO15693 Request Flags
-static const uint8_t ISO15693_REQ_FLAG_DR_HIGH = 0x02;
+static constexpr uint8_t ISO15693_REQ_FLAG_DR_HIGH = 0x02;
 
 static const char *const MIFARE_CLASSIC = "Mifare Classic";
 static const char *const NFC_FORUM_TYPE_2 = "NFC Forum Type 2";
