@@ -385,7 +385,24 @@ class Application {
 
   void schedule_dump_config() { this->dump_config_at_ = 0; }
 
-  void feed_wdt(uint32_t time = 0);
+  /// Minimum interval between real arch_feed_wdt() calls. Chosen to keep the
+  /// rate of HAL pokes low while still being small enough that any plausible
+  /// watchdog timeout (seconds) has orders of magnitude of safety margin.
+  static constexpr uint32_t WDT_FEED_INTERVAL_MS = 3;
+
+  /// Feed the task watchdog. Cold entry — callers without a millis()
+  /// timestamp in hand. Out of line to keep call sites tiny.
+  void feed_wdt();
+
+  /// Feed the task watchdog, hot entry. Callers that already have a
+  /// millis() timestamp pay only a load + sub + branch on the common
+  /// (no-op) path. The actual arch feed + status LED update live in
+  /// feed_wdt_slow_.
+  void ESPHOME_ALWAYS_INLINE feed_wdt_with_time(uint32_t time) {
+    if (static_cast<uint32_t>(time - this->last_wdt_feed_) > WDT_FEED_INTERVAL_MS) [[unlikely]] {
+      this->feed_wdt_slow_(time);
+    }
+  }
 
   void reboot();
 
@@ -401,7 +418,18 @@ class Application {
    */
   void teardown_components(uint32_t timeout_ms);
 
-  uint8_t get_app_state() const { return this->app_state_; }
+  /// Return the public app state status bits (STATUS_LED_* only).
+  /// Internal bookkeeping bits like APP_STATE_SETUP_COMPLETE are masked
+  /// out so external readers (status_led components, etc.) never see them.
+  uint8_t get_app_state() const { return this->app_state_ & ~APP_STATE_SETUP_COMPLETE; }
+
+  /// True once Application::setup() has finished walking all components
+  /// and finalized the initial status flags. Before this point, the
+  /// slow-setup busy-wait may be forcing STATUS_LED_WARNING on, and
+  /// status_clear_* intentionally skips its walk-and-clear step so the
+  /// forced bit doesn't get wiped. Stored as a free bit on app_state_
+  /// (bit 6) to avoid costing additional RAM.
+  bool is_setup_complete() const { return (this->app_state_ & APP_STATE_SETUP_COMPLETE) != 0; }
 
 // Helper macro for entity getter method declarations
 #ifdef USE_DEVICES
@@ -577,6 +605,12 @@ class Application {
   bool is_socket_ready_(int fd) const { return FD_ISSET(fd, &this->read_fds_); }
 #endif
 
+  /// Walk all registered components looking for any whose component_state_
+  /// has the given flag set. Used by Component::status_clear_*_slow_path_()
+  /// (which is a friend) to decide whether to clear the corresponding bit on
+  /// this->app_state_ (the app-wide "any component has this status" indicator).
+  bool any_component_has_status_flag_(uint8_t flag) const;
+
   /// Register a component, detecting loop() override at compile time.
   /// Uses HasLoopOverride<T> which handles ambiguous &T::loop from multiple inheritance.
   template<typename T> void register_component_(T *comp) {
@@ -607,7 +641,7 @@ class Application {
   void enable_component_loop_(Component *component);
   void enable_pending_loops_();
   void activate_looping_component_(uint16_t index);
-  inline void ESPHOME_ALWAYS_INLINE before_loop_tasks_(uint32_t loop_start_time);
+  inline uint32_t ESPHOME_ALWAYS_INLINE before_loop_tasks_(uint32_t loop_start_time);
   inline void ESPHOME_ALWAYS_INLINE after_loop_tasks_() { this->in_loop_ = false; }
 
   /// Process dump_config output one component per loop iteration.
@@ -615,7 +649,10 @@ class Application {
   /// Caller must ensure dump_config_at_ < components_.size().
   void __attribute__((noinline)) process_dump_config_();
 
-  void feed_wdt_arch_();
+  /// Slow path for feed_wdt(): actually calls arch_feed_wdt(), updates
+  /// last_wdt_feed_, and re-dispatches the status LED. Out of line so the
+  /// inline wrapper stays tiny.
+  void feed_wdt_slow_(uint32_t time);
 
   /// Perform a delay while also monitoring socket file descriptors for readiness
 #ifdef USE_HOST
@@ -669,6 +706,7 @@ class Application {
   // 4-byte members
   uint32_t last_loop_{0};
   uint32_t loop_component_start_time_{0};
+  uint32_t last_wdt_feed_{0};  // millis() of most recent arch_feed_wdt(); rate-limits feed_wdt() hot path
 
 #ifdef USE_HOST
   int max_fd_{-1};  // Highest file descriptor number for select()
@@ -807,17 +845,15 @@ inline void Application::drain_wake_notifications_() {
 }
 #endif  // USE_HOST
 
-inline void ESPHOME_ALWAYS_INLINE Application::before_loop_tasks_(uint32_t loop_start_time) {
+inline uint32_t ESPHOME_ALWAYS_INLINE Application::before_loop_tasks_(uint32_t loop_start_time) {
 #ifdef USE_HOST
   // Drain wake notifications first to clear socket for next wake
   this->drain_wake_notifications_();
 #endif
 
-  // Process scheduled tasks
-  this->scheduler.call(loop_start_time);
-
-  // Feed the watchdog timer
-  this->feed_wdt(loop_start_time);
+  // Scheduler::call feeds the WDT per item and returns the timestamp of the
+  // last fired item, or the input unchanged when nothing ran.
+  uint32_t last_op_end_time = this->scheduler.call(loop_start_time);
 
   // Process any pending enable_loop requests from ISRs
   // This must be done before marking in_loop_ = true to avoid race conditions
@@ -835,15 +871,35 @@ inline void ESPHOME_ALWAYS_INLINE Application::before_loop_tasks_(uint32_t loop_
 
   // Mark that we're in the loop for safe reentrant modifications
   this->in_loop_ = true;
+  return last_op_end_time;
 }
 
 inline void ESPHOME_ALWAYS_INLINE Application::loop() {
-  uint8_t new_app_state = 0;
-
+#ifdef USE_RUNTIME_STATS
+  // Capture the start of the active (non-sleeping) portion of this iteration.
+  // Used to derive main-loop overhead = active time − Σ(component time) −
+  // before/tail splits recorded below.
+  uint32_t loop_active_start_us = micros();
+  // Snapshot the cumulative component-recorded time so we can subtract the
+  // slice that the scheduler spends inside its own WarnIfComponentBlockingGuard
+  // (scheduler.cpp) — that time is already counted in per-component stats,
+  // so charging it again to "before" would double-count.
+  uint64_t loop_recorded_snap = ComponentRuntimeStats::global_recorded_us;
+#endif
   // Get the initial loop time at the start
   uint32_t last_op_end_time = millis();
 
-  this->before_loop_tasks_(last_op_end_time);
+  // Returned timestamp keeps us monotonic with last_wdt_feed_ (advanced by
+  // the scheduler's per-item feeds) without an extra millis() call.
+  last_op_end_time = this->before_loop_tasks_(last_op_end_time);
+  // Guarantee a WDT touch every tick — covers configs with no looping
+  // components and no scheduler work, where the per-item / per-component
+  // feeds never fire. Rate-limited inline fast path, ~free when unneeded.
+  this->feed_wdt_with_time(last_op_end_time);
+#ifdef USE_RUNTIME_STATS
+  uint32_t loop_before_end_us = micros();
+  uint64_t loop_before_scheduled_us = ComponentRuntimeStats::global_recorded_us - loop_recorded_snap;
+#endif
 
   for (this->current_loop_index_ = 0; this->current_loop_index_ < this->looping_components_active_end_;
        this->current_loop_index_++) {
@@ -859,18 +915,27 @@ inline void ESPHOME_ALWAYS_INLINE Application::loop() {
       // Use the finish method to get the current time as the end time
       last_op_end_time = guard.finish();
     }
-    new_app_state |= component->get_component_state();
-    this->app_state_ |= new_app_state;
-    this->feed_wdt(last_op_end_time);
+    this->feed_wdt_with_time(last_op_end_time);
   }
 
+#ifdef USE_RUNTIME_STATS
+  uint32_t loop_tail_start_us = micros();
+#endif
   this->after_loop_tasks_();
-  this->app_state_ = new_app_state;
 
 #ifdef USE_RUNTIME_STATS
   // Process any pending runtime stats printing after all components have run
   // This ensures stats printing doesn't affect component timing measurements
   if (global_runtime_stats != nullptr) {
+    uint32_t loop_now_us = micros();
+    // Subtract scheduled-component time from the "before" bucket so it is
+    // not double-counted (it is already attributed to per-component stats).
+    uint32_t loop_before_wall_us = loop_before_end_us - loop_active_start_us;
+    uint32_t loop_before_overhead_us = loop_before_wall_us > loop_before_scheduled_us
+                                           ? loop_before_wall_us - static_cast<uint32_t>(loop_before_scheduled_us)
+                                           : 0;
+    global_runtime_stats->record_loop_active(loop_now_us - loop_active_start_us, loop_before_overhead_us,
+                                             loop_now_us - loop_tail_start_us);
     global_runtime_stats->process_pending_stats(last_op_end_time);
   }
 #endif
