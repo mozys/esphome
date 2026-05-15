@@ -46,13 +46,20 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Set up uv
+        # An order of magnitude faster than pip on cold boots, with its
+        # own wheel cache. ``--system`` (below) installs into the
+        # setup-python interpreter so subsequent ``pre-commit`` /
+        # ``script/run-in-env.py`` steps find the deps without a
+        # ``uv run`` prefix.
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
       - name: Install Home Assistant
         run: |
-          python -m pip install --upgrade pip
-          pip install -e lib/home-assistant
-          # Project requirements are needed so pylint can resolve runtime
-          # imports (e.g. smpclient in esphome/components/nrf52/ota.py).
-          pip install -r requirements.txt -r requirements_test.txt pre-commit
+          uv pip install --system -e lib/home-assistant
+          uv pip install --system -r requirements.txt -r requirements_test.txt pre-commit
 
       - name: Sync
         run: |
@@ -63,13 +70,23 @@ jobs:
         # files. pre-commit exits non-zero whenever a hook touches anything,
         # which would otherwise abort the workflow before the auto-fixes
         # can flow into the sync PR.
+        #
+        # pylint is skipped: this workflow only installs a subset of the
+        # runtime deps (HA + requirements*.txt), so pylint surfaces
+        # import-error / relative-beyond-top-level noise that the main CI
+        # already gates on real PRs.
+        env:
+          SKIP: pylint
         run: python script/run-in-env.py pre-commit run --all-files || true
 
       - name: Verify pre-commit clean
         # Second pass: re-run all hooks against the now-fixed tree.
         # Auto-fixers exit 0 (nothing to change); any remaining failure
-        # from a check-only hook (pylint / flake8 / yamllint / ci-custom)
-        # is a real issue and fails the workflow loudly.
+        # from a check-only hook (flake8 / yamllint / ci-custom) is a
+        # real issue and fails the workflow loudly. pylint stays skipped
+        # for the same reason as above.
+        env:
+          SKIP: pylint
         run: python script/run-in-env.py pre-commit run --all-files
 
       - name: Commit changes
