@@ -407,10 +407,10 @@ bool WiFiComponent::wifi_sta_connect_(const WiFiAP &ap) {
 
   // setup enterprise authentication if required
 #ifdef USE_WIFI_WPA2_EAP
-  auto eap_opt = ap.get_eap();
+  const auto &eap_opt = ap.get_eap();
   if (eap_opt.has_value()) {
     // note: all certificates and keys have to be null terminated. Lengths are appended by +1 to include \0.
-    EAPAuth eap = *eap_opt;
+    const EAPAuth &eap = *eap_opt;
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
     err = esp_eap_client_set_identity((uint8_t *) eap.identity.c_str(), eap.identity.length());
 #else
@@ -718,17 +718,25 @@ const char *get_disconnect_reason_str(uint8_t reason) {
   }
 }
 
-void WiFiComponent::wifi_loop_() {
+bool WiFiComponent::wifi_loop_() {
+  // Use pop() directly instead of empty() — pop() costs 1 memw (acquire on tail_),
+  // while empty() costs 2 memw (acquire on both head_ and tail_) on Xtensa.
+  IDFWiFiEvent *data = this->event_queue_.pop();
+  if (data == nullptr)
+    return false;
+
+  do {
+    wifi_process_event_(data);
+    delete data;  // NOLINT(cppcoreguidelines-owning-memory)
+  } while ((data = this->event_queue_.pop()) != nullptr);
+
+  // Drops only occur when the queue is full, and only this loop drains it,
+  // so if pop() returned nullptr above we can skip this check.
   uint16_t dropped = this->event_queue_.get_and_reset_dropped_count();
   if (dropped > 0) {
     ESP_LOGW(TAG, "Dropped %u WiFi events due to buffer overflow", dropped);
   }
-
-  IDFWiFiEvent *data;
-  while ((data = this->event_queue_.pop()) != nullptr) {
-    wifi_process_event_(data);
-    delete data;  // NOLINT(cppcoreguidelines-owning-memory)
-  }
+  return true;
 }
 // Events are processed from queue in main loop context, but listener notifications
 // must be deferred until after the state machine transitions (in check_connecting_finished)

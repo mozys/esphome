@@ -116,8 +116,7 @@ def _parse_cron_int(value, special_mapping, message):
     try:
         return int(value)
     except ValueError:
-        # pylint: disable=raise-missing-from
-        raise cv.Invalid(message.format(value))
+        raise cv.Invalid(message.format(value)) from None
 
 
 def _parse_cron_part(part, min_value, max_value, special_mapping):
@@ -141,10 +140,9 @@ def _parse_cron_part(part, min_value, max_value, special_mapping):
         try:
             repeat_n = int(repeat)
         except ValueError:
-            # pylint: disable=raise-missing-from
             raise cv.Invalid(
                 f"Repeat for '/' time expression must be an integer, got {repeat}"
-            )
+            ) from None
         return set(range(offset_n, max_value + 1, repeat_n))
     if "-" in part:
         data = part.split("-")
@@ -347,7 +345,14 @@ TIME_SCHEMA = cv.Schema(
             }
         ),
     }
-).extend(cv.polling_component_schema("15min"))
+).extend(
+    # ``visibility=ADVANCED`` flags the inherited ``update_interval``
+    # field for visual editors — the 15min default is correct for
+    # essentially every user, so editors should keep it tucked under
+    # "advanced" so it doesn't crowd the form. Validation is
+    # unaffected; YAML can override as before.
+    cv.polling_component_schema("15min", visibility=cv.Visibility.ADVANCED)
+)
 
 
 def _emit_dst_rule_fields(prefix, rule):
