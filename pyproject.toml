@@ -119,6 +119,7 @@ select = [
   "FURB", # refurb
   "I",    # isort
   "ICN",  # flake8-import-conventions
+  "ISC",  # flake8-implicit-str-concat
   "LOG",  # flake8-logging
   "NPY",  # numpy-specific rules
   "PERF", # performance
