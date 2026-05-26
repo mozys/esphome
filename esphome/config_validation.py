@@ -1183,7 +1183,9 @@ def date_time(date: bool, time: bool):
                 format += "%p"
 
         try:
-            date_obj = datetime.strptime(value, format)
+            # The generated format never includes %z/%Z, so this parses a
+            # naive wall-clock date/time by design.
+            date_obj = datetime.strptime(value, format)  # noqa: DTZ007
         except ValueError as err:
             raise Invalid(f"Invalid {exc_message}: {err}") from err
 
