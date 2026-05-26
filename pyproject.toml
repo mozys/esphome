@@ -125,6 +125,7 @@ select = [
   "PERF", # performance
   "PL",   # pylint
   "Q",    # flake8-quotes
+  "RSE",  # flake8-raise
   "SIM",  # flake8-simplify
   "SLOT", # flake8-slots
   "RET",  # flake8-ret
