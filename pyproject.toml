@@ -125,6 +125,7 @@ select = [
   "PL",   # pylint
   "Q",    # flake8-quotes
   "SIM",  # flake8-simplify
+  "SLOT", # flake8-slots
   "RET",  # flake8-ret
   "T10",  # flake8-debugger
   "UP",   # pyupgrade
