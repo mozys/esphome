@@ -1,12 +1,12 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import logging
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 
 import esphome.config_validation as cv
@@ -73,8 +73,9 @@ def run_git_command(cmd: list[str], git_dir: Path | None = None) -> str:
         )
     except FileNotFoundError as err:
         raise GitNotInstalledError(
-            "git is not installed but required for external_components.\n"
-            "Please see https://git-scm.com/book/en/v2/Getting-Started-Installing-Git for installing git"
+            "git is not installed. See "
+            "https://git-scm.com/book/en/v2/Getting-Started-Installing-Git "
+            "for installation instructions."
         ) from err
 
     if ret.returncode != 0 and ret.stderr:
@@ -246,11 +247,11 @@ def clone_or_update(
             return repo_dir, None
 
         file_timestamp = Path(repo_dir / ".git" / "FETCH_HEAD")
-        # On first clone, FETCH_HEAD does not exists
+        # On first clone, FETCH_HEAD does not exist
         if not file_timestamp.exists():
             file_timestamp = Path(repo_dir / ".git" / "HEAD")
-        age = datetime.now() - datetime.fromtimestamp(file_timestamp.stat().st_mtime)
-        if refresh is None or age.total_seconds() > refresh.total_seconds:
+        age_seconds = time.time() - file_timestamp.stat().st_mtime
+        if refresh is None or age_seconds > refresh.total_seconds:
             # Try to update the repository, recovering from broken state if needed
             old_sha: str | None = None
             try:
@@ -340,6 +341,7 @@ def clone_or_update(
 
 
 GIT_DOMAINS = {
+    "codeberg": "codeberg.org",
     "github": "github.com",
     "gitlab": "gitlab.com",
 }
@@ -362,6 +364,8 @@ class GitFile:
     def raw_url(self) -> str:
         if self.ref is None:
             raise ValueError("URL has no ref")
+        if self.domain == "codeberg.org":
+            return f"https://codeberg.org/{self.owner}/{self.repo}/raw/commit/{self.ref}/{self.filename}"
         if self.domain == "github.com":
             return f"https://raw.githubusercontent.com/{self.owner}/{self.repo}/{self.ref}/{self.filename}"
         if self.domain == "gitlab.com":
