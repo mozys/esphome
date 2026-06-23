@@ -11,8 +11,7 @@
 
 #include <functional>
 
-namespace esphome {
-namespace pn7160 {
+namespace esphome::pn7160 {
 
 static constexpr uint8_t ST25DV_CMD_READ_MULTIPLE_BLOCKS = 0x23;
 static constexpr uint8_t ST25DV_PAGE_SIZE = 4;
@@ -355,5 +354,4 @@ class PN7160 : public nfc::Nfcc, public Component {
   std::vector<nfc::NfcOnTagTrigger *> triggers_ontagremoved_;
 };
 
-}  // namespace pn7160
-}  // namespace esphome
+}  // namespace esphome::pn7160
