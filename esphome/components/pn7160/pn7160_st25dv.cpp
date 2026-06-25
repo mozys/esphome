@@ -87,7 +87,8 @@ uint8_t PN7160::read_st25dv_bytes_(uint8_t start_page, uint16_t num_bytes, std::
     rx.get_message().erase(rx.get_message().end() - delete_bytes_count, rx.get_message().end());
   }
 
-  ESP_LOGVV(TAG, "Data read: %s", nfc::format_bytes(data).c_str());
+  char data_buf[nfc::FORMAT_BYTES_BUFFER_SIZE];
+  ESP_LOGVV(TAG, "Data read: %s", nfc::format_bytes_to(data_buf, data));
 
   return nfc::STATUS_OK;
 }
