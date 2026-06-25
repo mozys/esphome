@@ -13,6 +13,12 @@
 
 namespace esphome::pn7160 {
 
+static constexpr uint8_t ST25DV_CMD_READ_MULTIPLE_BLOCKS = 0x23;
+static constexpr uint8_t ST25DV_PAGE_SIZE = 4;
+static constexpr uint8_t ST25DV_READ_SIZE = 1;
+static constexpr uint8_t ST25DV_DATA_START_PAGE = 0;
+static constexpr uint8_t ST25DV_MAX_PAGE = 63;
+
 static constexpr uint16_t NFCC_DEFAULT_TIMEOUT = 10;
 static constexpr uint16_t NFCC_INIT_TIMEOUT = 50;
 static constexpr uint16_t NFCC_TAG_WRITE_TIMEOUT = 15;
@@ -69,7 +75,7 @@ static constexpr uint8_t PMU_CFG[] = {
     // 0xBB,        // TXLDO (4.7V / 4.7V)
     0xFF,  // TXLDO (5.0V / 5.0V)
     0x00,  // RFU
-    0xD0,  // TXLDO check
+    0x10,  // TXLDO check
     0x0C,  // RFU
 };
 
@@ -83,20 +89,20 @@ static constexpr uint8_t RF_DISCOVER_MAP_CONFIG[] = {  // poll modes
     nfc::PROT_ISODEP, nfc::RF_DISCOVER_MAP_MODE_POLL | nfc::RF_DISCOVER_MAP_MODE_LISTEN,
     nfc::INTF_ISODEP,  // poll & listen mode
     nfc::PROT_MIFARE, nfc::RF_DISCOVER_MAP_MODE_POLL,
-    nfc::INTF_TAGCMD};  // poll mode
+    nfc::INTF_TAGCMD,  // poll mode
+    nfc::PROT_NFCDEP,    nfc::RF_DISCOVER_MAP_MODE_POLL,
+    nfc::INTF_FRAME,  // poll mode
+    nfc::PROT_T5T,    nfc::RF_DISCOVER_MAP_MODE_POLL,
+    nfc::INTF_FRAME};  // poll mode
 
 static constexpr uint8_t RF_DISCOVERY_LISTEN_CONFIG[] = {
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
     nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
 
-static constexpr uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCA,   // poll mode
-                                                       nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCB,   // poll mode
-                                                       nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCF};  // poll mode
+static constexpr uint8_t RF_DISCOVERY_POLL_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693};  // poll mode
 
-static constexpr uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCA,          // poll mode
-                                                  nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCB,          // poll mode
-                                                  nfc::MODE_POLL | nfc::TECH_PASSIVE_NFCF,          // poll mode
+static constexpr uint8_t RF_DISCOVERY_CONFIG[] = {nfc::MODE_POLL | nfc::TECH_PASSIVE_15693,          // poll mode
                                                   nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCA,   // listen mode
                                                   nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCB,   // listen mode
                                                   nfc::MODE_LISTEN_MASK | nfc::TECH_PASSIVE_NFCF};  // listen mode
@@ -155,6 +161,32 @@ struct DiscoveredEndpoint {
   uint32_t last_seen;
   std::unique_ptr<nfc::NfcTag> tag;
   bool trig_called;
+};
+
+// Store class for ISR data (no vtables, ISR-safe)
+class PN7160Store {
+ public:
+  void setup(InternalGPIOPin *pin, Component *component);
+
+  static void gpio_intr(PN7160Store *arg);
+
+  bool get_state() const {
+    return this->state_;
+  }
+
+  bool is_changed() const {
+    return this->changed_;
+  }
+
+  void clear_changed() {
+    this->changed_ = false;
+  }
+
+ protected:
+  ISRInternalGPIOPin isr_pin_;
+  volatile bool state_{false};
+  volatile bool changed_{false};
+  Component *component_{nullptr};  // Pointer to the component for enable_loop_soon_any_context()
 };
 
 class PN7160 : public nfc::Nfcc, public Component {
@@ -249,7 +281,7 @@ class PN7160 : public nfc::Nfcc, public Component {
   virtual uint8_t read_nfcc(nfc::NciMessage &rx, uint16_t timeout) = 0;
   virtual uint8_t write_nfcc(nfc::NciMessage &tx) = 0;
 
-  uint8_t wait_for_irq_(uint16_t timeout = NFCC_DEFAULT_TIMEOUT, bool pin_state = true);
+  uint8_t wait_for_irq_(uint16_t timeout = NFCC_DEFAULT_TIMEOUT, bool pin_state = true, bool return_on_changed = false);
 
   uint8_t read_mifare_classic_tag_(nfc::NfcTag &tag);
   uint8_t read_mifare_classic_block_(uint8_t block_num, std::vector<uint8_t> &data);
@@ -270,6 +302,16 @@ class PN7160 : public nfc::Nfcc, public Component {
   uint8_t write_mifare_ultralight_page_(uint8_t page_num, const uint8_t *write_data, size_t len);
   uint8_t write_mifare_ultralight_tag_(nfc::NfcTagUid &uid, const std::shared_ptr<nfc::NdefMessage> &message);
   uint8_t clean_mifare_ultralight_();
+
+  uint8_t read_st25dv_tag_(nfc::NfcTag &tag);
+  uint8_t read_st25dv_bytes_(uint8_t start_page, uint16_t num_bytes, std::vector<uint8_t> &data);
+  bool is_st25dv_formatted_(const std::vector<uint8_t> &page_3_to_6);
+  uint16_t read_st25dv_capacity_();
+  uint8_t find_st25dv_ndef_(const std::vector<uint8_t> &page_0_to_1, uint16_t &message_length,
+                                       uint8_t &message_start_index);
+  uint8_t write_st25dv_page_(uint8_t page_num, std::vector<uint8_t> &write_data);
+  uint8_t write_st25dv_tag_(std::vector<uint8_t> &uid, const std::shared_ptr<nfc::NdefMessage> &message);
+  uint8_t clean_st25dv_();
 
   enum NfcTask : uint8_t {
     EP_READ = 0,
@@ -293,6 +335,8 @@ class PN7160 : public nfc::Nfcc, public Component {
   GPIOPin *irq_pin_{nullptr};
   GPIOPin *ven_pin_{nullptr};
   GPIOPin *wkup_req_pin_{nullptr};
+
+  PN7160Store store_;
 
   CallbackManager<void()> on_emulated_tag_scan_callback_;
   CallbackManager<void()> on_finished_write_callback_;

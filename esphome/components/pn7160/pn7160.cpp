@@ -11,8 +11,30 @@ namespace esphome::pn7160 {
 
 static const char *const TAG = "pn7160";
 
+void IRAM_ATTR PN7160Store::gpio_intr(PN7160Store *arg) {
+  bool new_state = arg->isr_pin_.digital_read();
+  if (new_state != arg->state_) {
+    arg->state_ = new_state;
+    arg->changed_ = true;
+  }
+}
+
+void PN7160Store::setup(InternalGPIOPin *pin, Component *component) {
+  this->isr_pin_ = pin->to_isr();
+  this->component_ = component;
+
+  // Read initial state
+  this->state_ = pin->digital_read();
+
+  // Attach interrupt - from this point on, any changes will be caught by the interrupt
+  pin->attach_interrupt(&PN7160Store::gpio_intr, this, gpio::INTERRUPT_ANY_EDGE);
+}
+
 void PN7160::setup() {
   this->irq_pin_->setup();
+  auto *internal_pin = static_cast<InternalGPIOPin *>(this->irq_pin_);
+  this->store_.setup(internal_pin, this);
+
   this->ven_pin_->setup();
   if (this->dwl_req_pin_ != nullptr) {
     this->dwl_req_pin_->setup();
@@ -25,7 +47,7 @@ void PN7160::setup() {
 }
 
 void PN7160::dump_config() {
-  ESP_LOGCONFIG(TAG, "PN7160:");
+  ESP_LOGCONFIG(TAG, "PN7160 ISO15693:");
   if (this->dwl_req_pin_ != nullptr) {
     LOG_PIN("  DWL_REQ pin: ", this->dwl_req_pin_);
   }
@@ -485,6 +507,9 @@ void PN7160::select_endpoint_() {
 
 uint8_t PN7160::read_endpoint_data_(nfc::NfcTag &tag) {
   uint8_t type = nfc::guess_tag_type(tag.get_uid().size());
+  if(tag.get_uid().size() == 8) {
+    type = nfc::TAG_TYPE_5;
+  }
 
   switch (type) {
     case nfc::TAG_TYPE_MIFARE_CLASSIC:
@@ -494,6 +519,10 @@ uint8_t PN7160::read_endpoint_data_(nfc::NfcTag &tag) {
     case nfc::TAG_TYPE_2:
       ESP_LOGV(TAG, "Reading Mifare ultralight");
       return this->read_mifare_ultralight_tag_(tag);
+
+    case nfc::TAG_TYPE_5:
+      ESP_LOGV(TAG, "Reading ST25DV");
+      return this->read_st25dv_tag_(tag);
 
     case nfc::TAG_TYPE_UNKNOWN:
     default:
@@ -562,6 +591,23 @@ std::unique_ptr<nfc::NfcTag> PN7160::build_tag_(const uint8_t mode_tech, const s
       nfc::NfcTagUid uid(data.begin() + 3, data.begin() + 3 + uid_length);
       const auto *tag_type_str =
           nfc::guess_tag_type(uid_length) == nfc::TAG_TYPE_MIFARE_CLASSIC ? nfc::MIFARE_CLASSIC : nfc::NFC_FORUM_TYPE_2;
+      return make_unique<nfc::NfcTag>(uid, tag_type_str);
+    }
+    case (nfc::MODE_POLL | nfc::TECH_PASSIVE_15693): {
+      // Debug output data
+      std::string hex_str;
+      hex_str.reserve(data.size() * 3); // Pre-allocate space
+      for (size_t i = 0; i < data.size(); ++i) {
+          if (i > 0) hex_str += " ";
+          char temp[3];
+          sprintf(temp, "%02X", data[i]);
+          hex_str += temp;
+      }
+      ESP_LOGVV(TAG, "data (len %d): %s", data.size(), hex_str.c_str());
+
+      uint8_t uid_length = 8;
+      nfc::NfcTagUid uid(data.begin() + 2, data.begin() + 2 + uid_length);
+      const auto *tag_type_str = nfc::NFC_FORUM_TYPE_5;
       return make_unique<nfc::NfcTag>(uid, tag_type_str);
     }
   }
@@ -699,7 +745,7 @@ void PN7160::nci_fsm_transition_() {
     case NCIState::RFST_POLL_ACTIVE:
     case NCIState::EP_SELECTING:
     case NCIState::EP_DEACTIVATING:
-      if (this->irq_pin_->digital_read()) {
+      if (this->store_.get_state()) {
         this->process_message_();
       }
       break;
@@ -1173,11 +1219,15 @@ uint8_t PN7160::transceive_(nfc::NciMessage &tx, nfc::NciMessage &rx, const uint
   }
 }
 
-uint8_t PN7160::wait_for_irq_(uint16_t timeout, bool pin_state) {
+uint8_t PN7160::wait_for_irq_(uint16_t timeout, bool pin_state, bool return_on_changed) {
   auto start_time = millis();
 
   while (millis() - start_time < timeout) {
-    if (this->irq_pin_->digital_read() == pin_state) {
+    if (this->store_.get_state() == pin_state) {
+      return nfc::STATUS_OK;
+    }
+    if(return_on_changed && this->store_.is_changed()) {
+      // irq state was already pin_state but we missed it
       return nfc::STATUS_OK;
     }
   }
